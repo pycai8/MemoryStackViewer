@@ -24,7 +24,7 @@ void main()
     test->b = 150;
     memset(test->data, 0, sizeof(test->data));
     strcat(test->data, "hello world!");
-    printf("test: a=%d, b=%d, data=%s", test->a, test->b, test->data);
+    printf("test: a=%d, b=%d, data=%s\n", test->a, test->b, test->data);
 
     free(test);
     test = 0;
