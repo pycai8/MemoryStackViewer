@@ -1,14 +1,16 @@
 #include "MyApi.h"
+#include <stddef.h>
+#include <stdlib.h>
 
-static bool g_init = false;
+static int g_init = 0;
 
 __attribute__ ((constructor))
 static void init()
 {
     if (!g_init)
     {
+        g_init = 1;
         MyInit();
-        g_init = true;
     }
 }
 
@@ -18,16 +20,16 @@ static void uninit()
     if (g_init)
     {
         MyUninit();
-        g_init = false;
+        g_init = 0;
     }
 }
 
-void* malloc(unsigned size)
+void* malloc(size_t size)
 {
     if (!g_init)
     {
+        g_init = 1;
         MyInit();
-        g_init = true;
     }
     
     return MyMalloc(size);
@@ -37,8 +39,8 @@ void free(void* ptr)
 {
     if (!g_init)
     {
+        g_init = 1;
         MyInit();
-        g_init = true;
     }
 
     MyFree(ptr);

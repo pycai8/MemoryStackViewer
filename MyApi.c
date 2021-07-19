@@ -3,32 +3,22 @@
 #include "BaseApi.h"
 #include "InnerApi.h"
 
-static thread_local bool g_innerCall = false;
+static __thread int g_innerCall = 0;
 
 void MyInit()
 {
-    if (g_innerCall)
-    {
-        BaseInit();
-        return;
-    }
-
-    g_innerCall = true;
+    g_innerCall = 1;
+    BaseInit();
     InnerInit();
-    g_innerCall = false;
+    g_innerCall = 0;
 }
 
 void MyUninit()
 {
-    if (g_innerCall)
-    {
-        BaseUninit();
-        return;
-    }
-
-    g_innerCall = true;
+    g_innerCall = 1;
+    BaseUninit();
     InnerUninit();
-    g_innerCall = false;
+    g_innerCall = 0;
 }
 
 void* MyMalloc(unsigned size)
@@ -38,9 +28,9 @@ void* MyMalloc(unsigned size)
         return BaseMalloc(size);
     }
 
-    g_innerCall = true;
+    g_innerCall = 1;
     void* ret = InnerMalloc(size);
-    g_innerCall = false;
+    g_innerCall = 0;
     return ret;
 }
 
@@ -52,8 +42,8 @@ void MyFree(void* ptr)
         return;
     }
 
-    g_innerCall = true;
+    g_innerCall = 1;
     InnerFree(ptr);
-    g_innerCall = false;
+    g_innerCall = 0;
 }
 
