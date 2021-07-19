@@ -1,9 +1,7 @@
+#include "defs.h"
 #include "BaseApi.h"
-#define __GNU_SOURCE
+#define _GNU_SOURCE
 #include <dlfcn.h>
-
-typedef void* (*PFN_Malloc) (unsigned size);
-typedef void  (*PFN_Free)   (void* ptr);
 
 static PFN_Malloc g_pfnMalloc = 0;
 static PFN_Free   g_pfnFree   = 0;

@@ -1,4 +1,5 @@
 #include "InnerApi.h"
+#include "defs.h"
 
 void InnerInit()
 {
