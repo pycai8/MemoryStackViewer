@@ -43,6 +43,7 @@ void StackDelCurrent(MemoryStack_t* stack)
 void StackPrintCurrent(MemoryStack_t* stack)
 {
     int i = 0;
+    DBG("total:%llu", stack->total);
     for (i = 0; i < stack->depth; i++)
     {
         void* ptr = stack->bt[i];
