@@ -81,7 +81,7 @@ void* realloc(void* ptr, size_t size)
     }
 
     // ptr != 0 && size != 0
-    return MyCalloc(ptr, size);
+    return MyRealloc(ptr, size);
 }
 
 void* valloc(size_t size)

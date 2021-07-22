@@ -134,7 +134,7 @@ int MyPosixMemAlign(void** ptr, size_t alignment, size_t size)
     }
 
     g_innerCall = 1;
-    void* ret = InnerPosixMemAlign(ptr, alignment, size);
+    int ret = InnerPosixMemAlign(ptr, alignment, size);
     g_innerCall = 0;
     return ret;
 }

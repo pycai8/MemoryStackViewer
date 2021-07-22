@@ -88,7 +88,7 @@ void* InnerMemAlign(size_t alignment, size_t size)
     return CUT_HDR(ret);
 }
 
-void* InnerLibcMemAlign(size_t alignment, size_t size);
+void* InnerLibcMemAlign(size_t alignment, size_t size)
 {
     size += HDR_LEN;
 
@@ -99,9 +99,30 @@ void* InnerLibcMemAlign(size_t alignment, size_t size);
     return CUT_HDR(ret);
 }
 
-int InnerPosixMemAlign(void** ptr, size_t alignment, size_t size);
+int InnerPosixMemAlign(void** ptr, size_t alignment, size_t size)
+{
+    size += HDR_LEN;
 
-void* InnerAlignedAlloc(size_t alignment, size_t size);
+    void* tmp = 0;
+    int ret = posix_memalign(&tmp, alignment, size);
+    if (ret != 0)
+    {
+        *ptr = 0;
+        return ret;
+    }
+
+    if (tmp == 0)
+    {
+        *ptr = 0;
+        return EINVAL;
+    }
+
+    StackMalloc(tmp, size);
+    *ptr = CUT_HDR(tmp);
+    return 0;
+}
+
+void* InnerAlignedAlloc(size_t alignment, size_t size)
 {
     size += HDR_LEN;
 

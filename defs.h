@@ -12,7 +12,7 @@
 
 #define HDR_LEN (2*sizeof(void*))
 #define MAX_STACK_LEN 100
-#define Add_HDR(ptr) (void*)((unsigned char*)ptr-HDR_LEN)
+#define ADD_HDR(ptr) (void*)((unsigned char*)ptr-HDR_LEN)
 #define CUT_HDR(ptr) (void*)((unsigned char*)ptr+HDR_LEN)
 
 #define DBG(fmt, ...) {printf(fmt, __VA_ARGS__);printf("\n");}
