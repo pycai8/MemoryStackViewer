@@ -3,6 +3,7 @@
 typedef struct tagMemoryStack
 {
     unsigned long long total;
+    unsigned long long count;
 
     struct tagMemoryStack* prev;
     struct tagMemoryStack* next;
@@ -23,6 +24,7 @@ MemoryStack_t* StackGetCurrent()
     MemoryStack_t* ret = (MemoryStack_t*)malloc(sizeof(MemoryStack_t));
     if (ret == 0) return 0;
 
+    ret->count = 0;
     ret->total = 0;
     ret->prev = 0;
     ret->next = 0;
@@ -43,7 +45,7 @@ void StackDelCurrent(MemoryStack_t* stack)
 void StackPrintCurrent(MemoryStack_t* stack)
 {
     int i = 0;
-    DBG("total:%llu", stack->total);
+    DBG("count:%llu, total:%llu", stack->count, stack->total);
     for (i = 0; i < stack->depth; i++)
     {
         void* ptr = stack->bt[i];
@@ -55,12 +57,16 @@ void StackPrintCurrent(MemoryStack_t* stack)
             continue;
         }
 
-        DBG("src[%p] fbase[%p] saddr[%p] fname[%s] sname[%s]"
-            , ptr
-            , info.dli_fbase
-            , info.dli_saddr
-            , info.dli_fname
-            , info.dli_sname);
+        unsigned long diff = 0;
+        if (info.dli_saddr != 0 && info.dli_fbase != 0)
+            diff = info.dli_saddr - info.dli_fbase;
+
+        DBG("#%d %s(%s+0x%x) [%p]"
+            , i
+            , (info.dli_fname != 0 && *info.dli_fname != 0 ? info.dli_fname : "unknow")
+            , (info.dli_sname != 0 && *info.dli_sname != 0 ? info.dli_sname : "unknow")
+            , diff
+            , ptr);
     }
 }
 
@@ -75,11 +81,12 @@ void StackUninit()
 void StackMalloc(void* ptr, size_t size)
 {
     PtrHeader_t* h = (PtrHeader_t*)ptr;
-    h->size = size;
+    h->size = size - HDR_LEN;
     h->stack = StackGetCurrent();
     if (!h->stack) return;
 
     h->stack->total += h->size;
+    h->stack->count++;
 }
 
 void StackFree(void* ptr)
@@ -89,6 +96,7 @@ void StackFree(void* ptr)
 
     StackPrintCurrent(h->stack);
 
+    h->stack->count--;
     h->stack->total -= h->size;
     if (h->stack->total == 0) StackDelCurrent(h->stack);
 }
