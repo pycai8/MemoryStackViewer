@@ -9,6 +9,8 @@
 #include <execinfo.h>
 #include <signal.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 ////////////////pre-defines///////////////////////
 #define RPT_SIGNAL 64
@@ -17,9 +19,9 @@
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
 
-#define DBG(fmt, ...) {printf("\ndebug %s:%d %s =>", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);}
-#define INFO(fmt, ...) {printf("\ninfo %s:%d %s =>", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);}
-#define ERR(fmt, ...) {printf("\nerror %s:%d %s =>", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);}
+#define DBG(fmt, ...) {printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define INFO(fmt, ...) {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define ERR(fmt, ...) {printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
 #define RPT(fp, fmt, ...) {fprintf(fp, fmt, ##__VA_ARGS__);fprintf(fp, "\n");}
 
 ///////////////pfn type defines///////////////////////
@@ -214,7 +216,62 @@ static const unsigned long long g_crc64Table[256] = {
     0x536fa08fdfd90e51ULL, 0x29b7d047efec8728ULL
 };
 
-//////////////////stack functions//////////////////////
+//////////////////time pid cmd crc/////////////////
+
+static void getCurTime(char* out, int len)
+{
+    time_t cur = time(0);
+    struct tm now = {0};
+    localtime_r(&cur, &now);
+    
+    now.tm_year += 1900;
+    now.tm_mon += 1;
+
+    snprintf(out, len, "time_%d%s%d%s%d_%s%d%s%d%s%d"
+        , now.tm_year
+        , (now.tm_mon < 10 ? "0" : "")
+        , now.tm_mon
+        , (now.tm_mday < 10 ? "0" : "")
+        , now.tm_mday
+        , (now.tm_hour < 10 ? "0" : "")
+        , now.tm_hour
+        , (now.tm_min < 10 ? "0" : "")
+        , now.tm_min
+        , (now.tm_sec < 10 ? "0" : "")
+        , now.tm_sec
+        );
+
+}
+
+static void initPidCmd()
+{
+    if (g_pidCmd[0] != 0) return;
+
+    pid_t pid = getpid();
+
+    char file[100] = {0};
+    snprintf(file, sizeof(file), "/proc/%lu/cmdline", (unsigned long)pid);
+    FILE* fp = fopen(file, "r");
+    if (fp == 0)
+    {
+        return;
+    }
+
+    char cmd[1024] = {0};
+    fread(cmd, sizeof(cmd), 1, fp);
+    fclose(fp);
+
+    int i = 0;
+    for (i = 0; i < sizeof(cmd) && cmd[i] != 0; i++)
+    {
+        if ('0' < cmd[i] && cmd[i] < '9') continue;
+        if ('a' < cmd[i] && cmd[i] < 'z') continue;
+        if ('A' < cmd[i] && cmd[i] < 'Z') continue;
+        cmd[i] = '_';
+    }
+
+    snprintf(g_pidCmd, sizeof(g_pidCmd), "pid_%lu_cmdline_%s", (unsigned long)pid, cmd);
+}
 
 static unsigned long long getVid(void** bt, unsigned long depth)
 {
@@ -229,12 +286,14 @@ static unsigned long long getVid(void** bt, unsigned long depth)
         for (j = 0; j < sizeof(void*); j++) 
         {
             unsigned char byte = tmp[j];
-            crc = g_crc64Table[(unsigned char)crc ^ byte] ^ (crc >> 8);
+            crc = g_crc64Table[(crc ^ byte) & 0xff] ^ (crc >> 8);
         }
     }
 
     return crc; 
 }
+
+//////////////////stack functions//////////////////////
 
 static void rptSigHdr(int sigNum)
 {
@@ -242,9 +301,10 @@ static void rptSigHdr(int sigNum)
 
     if (g_pfnRptSigOutHdr != SIG_ERR && g_pfnRptSigOutHdr != 0) g_pfnRptSigOutHdr(sigNum);
 
-
     char time[100] = {0};
+    getCurTime(time, sizeof(time));
     char file[1024] = {0};
+    snprintf(file, sizeof(file), "%s/%s_%s.bt", RPT_DIR, time, g_pidCmd);
 
     FILE* fp = fopen(file, "at+");
     if (fp == 0)
@@ -253,10 +313,12 @@ static void rptSigHdr(int sigNum)
         return;
     }
 
+    INFO("open file[%s] success", file);
+
     RPT(fp,
         "%s\n" // time
         "%s\n" // pid and cmdline
-        "count: %lu, total: %lu" // whole count and whole total
+        "count: %lu, total: %lu\n" // whole count and whole total
         , time
         , g_pidCmd 
         , g_count, g_total);
@@ -274,12 +336,13 @@ static void rptSigHdr(int sigNum)
         unsigned long tmpUsingBtCnt = 0;
         for (tmp = g_list[i]; tmp != 0; tmp = tmp->next)
         {
+            DBG("vid: %lu", tmp->vid);
             totalBtCnt++;
             tmpBtCnt++;
             if (tmp->count == 0 || tmp->total == 0) continue;
             usingBtCnt++;
             tmpUsingBtCnt++;
-            RPT(fp, "count: %lu, total: %lu", tmp->count, tmp->total);
+            RPT(fp, "\ncount: %lu, total: %lu", tmp->count, tmp->total);
             int j = 0;
             for (j = 0; j < tmp->depth; j++)
             {
@@ -319,6 +382,8 @@ static void rptSigHdr(int sigNum)
         , g_chc
         , maxBtCnt
         , maxUsingBtCnt);
+
+    fclose(fp);
 }
 
 MemBt* stackGetCurrent(size_t size)
@@ -341,6 +406,7 @@ static int stackEqual(MemBt* bt1, MemBt* bt2)
 
     if (bt1->depth != bt2->depth)
     {
+        DBG("crc hit when diff depth");
         __sync_add_and_fetch(&g_chc, 1);
         return 0;
     }
@@ -351,6 +417,7 @@ static int stackEqual(MemBt* bt1, MemBt* bt2)
         if (bt1->bt[i] != bt2->bt[i])
         {
             __sync_add_and_fetch(&g_chc, 1);
+            DBG("crc hit when diff bt");
             return 0;
         }
     }
@@ -364,6 +431,9 @@ static void* stackMalloc(void* ptr, size_t size)
     void* ret = CUT_HDR(ptr);
     hdr->size = size - HDR_LEN;
     hdr->stack = 0;
+
+    __sync_add_and_fetch(&g_count, 1);
+    __sync_add_and_fetch(&g_total, hdr->size);
 
     MemBt* stack = stackGetCurrent(hdr->size);
     if (stack == 0) return ret;
@@ -400,8 +470,10 @@ static void* stackMalloc(void* ptr, size_t size)
 static void stackFree(void* ptr)
 {
     PtrHdr* hdr = (PtrHdr*)ptr;
+    __sync_sub_and_fetch(&g_count, 1);
+    __sync_sub_and_fetch(&g_total, hdr->size);
+    
     if (hdr->stack == 0) return;
-
     __sync_sub_and_fetch(&hdr->stack->count, 1);
     __sync_sub_and_fetch(&hdr->stack->total, hdr->size);
 }
@@ -428,6 +500,7 @@ static void init()
         PFN_SignalHandler ret = SIG_ERR;
         if (g_pfnSignal) ret = g_pfnSignal(RPT_SIGNAL, rptSigHdr);
         if (ret == SIG_ERR) ERR("report signal[%d] install fail", RPT_SIGNAL);
+        initPidCmd();
     }
 }
 
