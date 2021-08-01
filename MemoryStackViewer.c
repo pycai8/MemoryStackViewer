@@ -280,12 +280,12 @@ static unsigned long long getVid(void** bt, unsigned long depth)
     int i = 0;
     for (i = 0; i < depth; i++)
     {
-        void* ptr = bt[i];
-        unsigned char* tmp = (unsigned char*)ptr;
+        unsigned long ptrVal = (unsigned long)bt[i];
+        unsigned char* ptrTmp = (unsigned char*)&ptrVal;
         int j = 0;
-        for (j = 0; j < sizeof(void*); j++) 
+        for (j = 0; j < sizeof(ptrVal); j++) 
         {
-            unsigned char byte = tmp[j];
+            unsigned char byte = ptrTmp[j];
             crc = g_crc64Table[(crc ^ byte) & 0xff] ^ (crc >> 8);
         }
     }

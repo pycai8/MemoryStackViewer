@@ -12,9 +12,6 @@ struct TEST
 
 void main()
 {
-    void* tmp = malloc(99);
-    free(tmp);
-    return;
 
     printf("test: start\n");
     struct TEST* test = (struct TEST*)malloc(sizeof(struct TEST));
