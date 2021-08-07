@@ -383,7 +383,7 @@ static void rptSigHdr(int sigNum)
     fclose(fp);
 }
 
-MemBt* stackGetCurrent(size_t size)
+static MemBt* stackGetCurrent(size_t size)
 {
     MemBt* ret = (MemBt*)malloc(sizeof(MemBt));
     if (ret == 0) return 0;
