@@ -19,9 +19,9 @@
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
 
-#define DBG(fmt, ...) {printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define INFO(fmt, ...) {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define ERR(fmt, ...) {printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define DBG(fmt, ...) //{printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define INFO(fmt, ...) //{printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define ERR(fmt, ...) //{printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
 #define RPT(fp, fmt, ...) {fprintf(fp, fmt, ##__VA_ARGS__);fprintf(fp, "\n");}
 
 ///////////////pfn type defines///////////////////////
@@ -344,24 +344,21 @@ static void rptSigHdr(int sigNum)
             tmpUsingBtCnt++;
             RPT(fp, "\ncount: %lu, total: %lu", tmp->count, tmp->total);
             int j = 0;
-            for (j = 0; j < tmp->depth; j++)
+            for (j = 2; j < tmp->depth; j++)
             {
                 void* ptr = tmp->bt[j];
                 Dl_info info = {0};
                 if (dladdr(ptr, &info) == 0)
                 {
-                    RPT(fp,
-                        "%d %p no no"
-                        , j
-                        , ptr);
+                    RPT(fp, "? ?");
                     continue;
                 }
+                unsigned long diff = (unsigned long)ptr;
+                if (diff >> 32 != 0 && info.dli_fbase != 0) diff -= (unsigned long)info.dli_fbase; 
                 RPT(fp,
-                    "%d %p %s 0x%x"
-                    , j
-                    , ptr
-                    , ((info.dli_fname != 0 && *info.dli_fname != 0) ? info.dli_fname : "no")
-                    , (info.dli_fbase != 0 ? ((unsigned long)ptr - (unsigned long)info.dli_fbase) : 0)
+                    "%s 0x%x"
+                    , ((info.dli_fname != 0 && *info.dli_fname != 0) ? info.dli_fname : "?")
+                    , diff
                     );
             }
         }
