@@ -15,7 +15,7 @@
 ////////////////pre-defines///////////////////////
 #define RPT_SIGNAL 64
 #define MAX_STACK_LEN 32
-#define RPT_DIR "/var/log/MemoryStackViewer"
+#define RPT_DIR "/var/log/msv"
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
 
