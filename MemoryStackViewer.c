@@ -344,7 +344,7 @@ static void rptSigHdr(int sigNum)
             tmpUsingBtCnt++;
             RPT(fp, "\ncount: %lu, total: %lu", tmp->count, tmp->total);
             int j = 0;
-            for (j = 2; j < tmp->depth; j++)
+            for (j = 0; j < tmp->depth; j++)
             {
                 void* ptr = tmp->bt[j];
                 Dl_info info = {0};
@@ -367,7 +367,7 @@ static void rptSigHdr(int sigNum)
     }
     selfUseMem = totalBtCnt * sizeof(MemBt) + sizeof(g_list);
     RPT(fp,
-        "\ntotal bt count: %lu"
+        "\n\ntotal bt count: %lu"
         "\nusing bt count: %lu"
         "\nself use memory: %lu"
         "\ncrc hit count: %lu"
