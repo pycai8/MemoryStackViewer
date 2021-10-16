@@ -19,9 +19,9 @@
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
 
-#define DBG(fmt, ...) //{printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define INFO(fmt, ...) //{printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define ERR(fmt, ...) //{printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define DBG(fmt, ...) {printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define INFO(fmt, ...) {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define ERR(fmt, ...) {printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
 #define RPT(fp, fmt, ...) {fprintf(fp, fmt, ##__VA_ARGS__);fprintf(fp, "\n");}
 
 ///////////////pfn type defines///////////////////////
@@ -37,6 +37,7 @@ typedef int (*PFN_PosixMemAlign)(void**, size_t, size_t);
 typedef void* (*PFN_AlignedAlloc)(size_t, size_t);
 typedef void (*PFN_SignalHandler)(int);
 typedef PFN_SignalHandler (*PFN_Signal)(int, PFN_SignalHandler);
+typedef size_t (*PFN_MallocUsableSize)(void*);
 
 /////////////stack struct defines///////////////////
 typedef struct tagMemBt
@@ -55,6 +56,8 @@ typedef struct tagPtrHdr
 {
     MemBt* stack;
     unsigned long size;
+    unsigned long vid;
+    unsigned long sign;
 } PtrHdr;
 
 #define HDR_LEN sizeof(PtrHdr)
@@ -80,7 +83,7 @@ static PFN_LibcMemAlign g_pfnLibcMemAlign = 0;
 static PFN_PosixMemAlign g_pfnPosixMemAlign = 0;
 static PFN_AlignedAlloc g_pfnAlignedAlloc = 0;
 static PFN_Signal g_pfnSignal = 0;
-
+static PFN_MallocUsableSize g_pfnMallocUsableSize = 0;
 static PFN_SignalHandler g_pfnRptSigOutHdr = SIG_DFL;
 
 static char g_pidCmd[1024] = {0};
@@ -264,9 +267,9 @@ static void initPidCmd()
     int i = 0;
     for (i = 0; i < sizeof(cmd) && cmd[i] != 0; i++)
     {
-        if ('0' < cmd[i] && cmd[i] < '9') continue;
-        if ('a' < cmd[i] && cmd[i] < 'z') continue;
-        if ('A' < cmd[i] && cmd[i] < 'Z') continue;
+        if ('0' <= cmd[i] && cmd[i] <= '9') continue;
+        if ('a' <= cmd[i] && cmd[i] <= 'z') continue;
+        if ('A' <= cmd[i] && cmd[i] <= 'Z') continue;
         cmd[i] = '_';
     }
 
@@ -476,7 +479,7 @@ static void stackFree(void* ptr)
 }
 
 //////////////////outter functions/////////////////////
-__attribute__ ((constructor))
+__attribute__((constructor))
 static void init()
 {
     if (!g_init)
@@ -494,27 +497,51 @@ static void init()
         g_pfnPosixMemAlign = (PFN_PosixMemAlign)dlsym(RTLD_NEXT, "posix_memalign");
         g_pfnAlignedAlloc = (PFN_AlignedAlloc)dlsym(RTLD_NEXT, "aligned_alloc");
         g_pfnSignal = (PFN_Signal)dlsym(RTLD_NEXT, "signal");
+        g_pfnMallocUsableSize = (PFN_MallocUsableSize)dlsym(RTLD_NEXT, "malloc_usable_size");
         PFN_SignalHandler ret = SIG_ERR;
         if (g_pfnSignal) ret = g_pfnSignal(RPT_SIGNAL, rptSigHdr);
         if (ret == SIG_ERR) ERR("report signal[%d] install fail", RPT_SIGNAL);
         initPidCmd();
+        DBG("init success");
     }
 }
 
-__attribute__ ((destructor))
+__attribute__((destructor))
 static void uninit()
 {
     if (g_init)
     {
         // do here
-        g_init = 0;
+        DBG("uninit success");
     }
+}
+
+size_t malloc_usable_size(void* ptr)
+{
+    init();
+
+    if (ptr == 0) return 0;
+
+    if (g_innerCall) return (g_pfnMallocUsableSize == 0 ? 0 : g_pfnMallocUsableSize(ptr));
+
+    size_t ret = 0;
+    g_innerCall = 1;
+
+    INFO("malloc_usable_size start, ptr = %p", ptr);
+    ptr = ADD_HDR(ptr);
+    ret = malloc_usable_size(ptr);
+    if (ret >= HDR_LEN) ret -= HDR_LEN;
+    else ret = 0; // error
+    INFO("malloc_usable_size success, ptr = %p, ret = %lu", ptr, ret);
+
+    g_innerCall = 0;
+    return ret;
 }
 
 void* malloc(size_t size)
 {
     init();
-
+    
     if (size == 0) return 0;
 
     if (g_innerCall) return (g_pfnMalloc == 0 ? 0 : g_pfnMalloc(size));
@@ -525,6 +552,7 @@ void* malloc(size_t size)
     size += HDR_LEN;
     ret = malloc(size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    DBG("malloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -539,7 +567,13 @@ void free(void* ptr)
     if (g_innerCall) { if (g_pfnFree) g_pfnFree(ptr); return; }
 
     g_innerCall = 1;
-    stackFree(ADD_HDR(ptr));
+
+    DBG("free start, ptr = %p", ptr);
+    ptr = ADD_HDR(ptr);
+    stackFree(ptr);
+    free(ptr);
+    DBG("free success, ptr = %p", ptr);
+
     g_innerCall = 0;
 }
 
@@ -558,6 +592,7 @@ void* calloc(size_t cnt, size_t size)
     cnt += HDR_LEN;
     ret = calloc(cnt, 1);
     if (ret != 0) ret = stackMalloc(ret, cnt);
+    DBG("calloc success, cnt(nmemb) = %lu, size = %lu, ret=%p", cnt, size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -582,6 +617,7 @@ void* realloc(void* ptr, size_t size)
     oldHdr = *(PtrHdr*)ptr;
     ret = realloc(ptr, size);
     if (ret != 0) { stackFree((void*)&oldHdr); ret = stackMalloc(ret, size); }
+    DBG("realloc success, ptr = %p, size = %lu, ret = %p", ptr, size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -601,6 +637,7 @@ void* valloc(size_t size)
     size += HDR_LEN;
     ret = valloc(size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    INFO("valloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -620,6 +657,7 @@ void* pvalloc(size_t size)
     size += HDR_LEN;
     ret = pvalloc(size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    INFO("pvalloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -639,6 +677,7 @@ void* memalign(size_t alignment, size_t size)
     size += HDR_LEN;
     ret = memalign(alignment, size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    INFO("memalign success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -658,6 +697,7 @@ void* libc_memalign(size_t alignment, size_t size)
     size += HDR_LEN;
     ret = libc_memalign(alignment, size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    INFO("libc_memalign success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -675,11 +715,14 @@ int posix_memalign(void** ptr, size_t alignment, size_t size)
     int ret = EINVAL;
     g_innerCall = 1;
 
+    INFO("posix_memalign start, ptr = %p, alignment = %lu, size = %lu", ptr, alignment, size);
     size += HDR_LEN;
     ret = posix_memalign(ptr, alignment, size);
+    void* temp = *ptr;
     if (ret != 0) *ptr = 0;
     else if (*ptr == 0) ret = EINVAL;
     else *ptr = stackMalloc(*ptr, size);
+    INFO("posix_memalign success, ptr = %p, alignment = %lu, size = %lu, ret = %d, ret_size = %lu", ptr, alignment, size, ret, malloc_usable_size(temp));
 
     g_innerCall = 0;
     return ret;
@@ -699,6 +742,7 @@ void* aligned_alloc(size_t alignment, size_t size)
     size += HDR_LEN;
     ret = aligned_alloc(alignment, size);
     if (ret != 0) ret = stackMalloc(ret, size);
+    INFO("aligned_alloc success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
     return ret;
@@ -718,6 +762,7 @@ PFN_SignalHandler signal(int sigNum, PFN_SignalHandler sigHdr)
 
     if (sigNum != RPT_SIGNAL) ret = signal(sigNum, sigHdr);
     else ret = __sync_lock_test_and_set(&g_pfnRptSigOutHdr, sigHdr);
+    INFO("signal success, sigNum = %d", sigNum);
 
     g_innerCall = 0;
     return ret;
