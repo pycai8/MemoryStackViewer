@@ -19,9 +19,9 @@
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
 
-#define DBG(fmt, ...) {printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define INFO(fmt, ...) {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
-#define ERR(fmt, ...) {printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define DBG(fmt, ...)  //{printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define INFO(fmt, ...)  // {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
+#define ERR(fmt, ...) //{printf("error %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
 #define RPT(fp, fmt, ...) {fprintf(fp, fmt, ##__VA_ARGS__);fprintf(fp, "\n");}
 
 ///////////////pfn type defines///////////////////////
@@ -57,12 +57,13 @@ typedef struct tagPtrHdr
     MemBt* stack;
     unsigned long size;
     unsigned long vid;
-    unsigned long sign;
+    unsigned long hdrlen;
 } PtrHdr;
 
-#define HDR_LEN sizeof(PtrHdr)
-#define ADD_HDR(ptr) ((unsigned char*)ptr - HDR_LEN)
-#define CUT_HDR(ptr) ((unsigned char*)ptr + HDR_LEN)
+#define MSV_ALIGNMENT sizeof(PtrHdr)
+#define MIN_ALIGNMENT (sizeof(PtrHdr) + sizeof(unsigned long))
+#define ADD_HDR(ptr) ((unsigned char*)ptr - *((unsigned long*)ptr - 1))
+#define CUT_HDR(ptr) ((unsigned char*)ptr + ((PtrHdr*)ptr)->hdrlen)
 
 //////////////////global values///////////////////
 static int g_init = 0;
@@ -87,6 +88,7 @@ static PFN_MallocUsableSize g_pfnMallocUsableSize = 0;
 static PFN_SignalHandler g_pfnRptSigOutHdr = SIG_DFL;
 
 static char g_pidCmd[1024] = {0};
+static unsigned long g_pageSize = 4096;
 
 static const unsigned long long g_crc64Table[256] = {
     0x0000000000000000ULL, 0x7ad870c830358979ULL,
@@ -425,12 +427,15 @@ static int stackEqual(MemBt* bt1, MemBt* bt2)
     return 1;
 }
 
-static void* stackMalloc(void* ptr, size_t size)
+static void* stackMalloc(void* ptr, size_t alignment, size_t size)
 {
     PtrHdr* hdr = (PtrHdr*)ptr;
-    void* ret = CUT_HDR(ptr);
-    hdr->size = size - HDR_LEN;
+    hdr->size = size - alignment;
     hdr->stack = 0;
+    hdr->vid = 0;
+    hdr->hdrlen = alignment;
+    *(unsigned long*)((unsigned char*)ptr + alignment - sizeof(unsigned long)) = alignment;
+    void* ret = CUT_HDR(ptr);
 
     __sync_add_and_fetch(&g_count, 1);
     __sync_add_and_fetch(&g_total, hdr->size);
@@ -498,6 +503,7 @@ static void init()
         g_pfnAlignedAlloc = (PFN_AlignedAlloc)dlsym(RTLD_NEXT, "aligned_alloc");
         g_pfnSignal = (PFN_Signal)dlsym(RTLD_NEXT, "signal");
         g_pfnMallocUsableSize = (PFN_MallocUsableSize)dlsym(RTLD_NEXT, "malloc_usable_size");
+        g_pageSize = (unsigned long)getpagesize();
         PFN_SignalHandler ret = SIG_ERR;
         if (g_pfnSignal) ret = g_pfnSignal(RPT_SIGNAL, rptSigHdr);
         if (ret == SIG_ERR) ERR("report signal[%d] install fail", RPT_SIGNAL);
@@ -528,9 +534,10 @@ size_t malloc_usable_size(void* ptr)
     g_innerCall = 1;
 
     INFO("malloc_usable_size start, ptr = %p", ptr);
-    ptr = ADD_HDR(ptr);
-    ret = malloc_usable_size(ptr);
-    if (ret >= HDR_LEN) ret -= HDR_LEN;
+    void* temp = ADD_HDR(ptr);
+    ret = malloc_usable_size(temp);
+    unsigned long hdrLen = (unsigned long)ptr - (unsigned long)temp;
+    if (ret >= hdrLen) ret -= hdrLen;
     else ret = 0; // error
     INFO("malloc_usable_size success, ptr = %p, ret = %lu", ptr, ret);
 
@@ -549,9 +556,9 @@ void* malloc(size_t size)
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += MSV_ALIGNMENT;
     ret = malloc(size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, MSV_ALIGNMENT, size);
     DBG("malloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
@@ -589,9 +596,9 @@ void* calloc(size_t cnt, size_t size)
     g_innerCall = 1;
 
     cnt *= size;
-    cnt += HDR_LEN;
+    cnt += MSV_ALIGNMENT;
     ret = calloc(cnt, 1);
-    if (ret != 0) ret = stackMalloc(ret, cnt);
+    if (ret != 0) ret = stackMalloc(ret, MSV_ALIGNMENT, cnt);
     DBG("calloc success, cnt(nmemb) = %lu, size = %lu, ret=%p", cnt, size, ret);
 
     g_innerCall = 0;
@@ -612,11 +619,11 @@ void* realloc(void* ptr, size_t size)
     g_innerCall = 1;
 
     ptr = ADD_HDR(ptr);
-    size += HDR_LEN;
+    size += MSV_ALIGNMENT;
     PtrHdr oldHdr = {0};
     oldHdr = *(PtrHdr*)ptr;
     ret = realloc(ptr, size);
-    if (ret != 0) { stackFree((void*)&oldHdr); ret = stackMalloc(ret, size); }
+    if (ret != 0) { stackFree((void*)&oldHdr); ret = stackMalloc(ret, MSV_ALIGNMENT, size); }
     DBG("realloc success, ptr = %p, size = %lu, ret = %p", ptr, size, ret);
 
     g_innerCall = 0;
@@ -628,15 +635,16 @@ void* valloc(size_t size)
     init();
 
     if (size == 0) return 0;
+    if (g_pageSize < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnValloc == 0 ? 0 : g_pfnValloc(size));
 
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += g_pageSize;
     ret = valloc(size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, g_pageSize, size);
     INFO("valloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
@@ -648,15 +656,16 @@ void* pvalloc(size_t size)
     init();
 
     if (size == 0) return 0;
+    if (g_pageSize < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnPValloc == 0 ? 0 : g_pfnPValloc(size));
 
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += g_pageSize;
     ret = pvalloc(size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, g_pageSize, size);
     INFO("pvalloc success, size = %lu, ret = %p", size, ret);
 
     g_innerCall = 0;
@@ -668,15 +677,16 @@ void* memalign(size_t alignment, size_t size)
     init();
 
     if (size == 0) return 0;
+    if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnMemAlign == 0 ? 0 : g_pfnMemAlign(alignment, size));
 
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += alignment;
     ret = memalign(alignment, size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, alignment, size);
     INFO("memalign success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
@@ -688,15 +698,16 @@ void* libc_memalign(size_t alignment, size_t size)
     init();
 
     if (size == 0) return 0;
+    if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnLibcMemAlign == 0 ? 0 : g_pfnLibcMemAlign(alignment, size));
 
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += alignment;
     ret = libc_memalign(alignment, size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, alignment, size);
     INFO("libc_memalign success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
@@ -709,6 +720,7 @@ int posix_memalign(void** ptr, size_t alignment, size_t size)
 
     if (ptr == 0) return EINVAL;
     if (size == 0) { *ptr = 0; return EINVAL; }
+    if (alignment < MIN_ALIGNMENT) { *ptr = 0; return EINVAL; }
 
     if (g_innerCall) return (g_pfnPosixMemAlign == 0 ? 0 : g_pfnPosixMemAlign(ptr, alignment, size));
 
@@ -716,12 +728,12 @@ int posix_memalign(void** ptr, size_t alignment, size_t size)
     g_innerCall = 1;
 
     INFO("posix_memalign start, ptr = %p, alignment = %lu, size = %lu", ptr, alignment, size);
-    size += HDR_LEN;
+    size += alignment;
     ret = posix_memalign(ptr, alignment, size);
     void* temp = *ptr;
     if (ret != 0) *ptr = 0;
     else if (*ptr == 0) ret = EINVAL;
-    else *ptr = stackMalloc(*ptr, size);
+    else *ptr = stackMalloc(*ptr, alignment, size);
     INFO("posix_memalign success, ptr = %p, alignment = %lu, size = %lu, ret = %d, ret_size = %lu", ptr, alignment, size, ret, malloc_usable_size(temp));
 
     g_innerCall = 0;
@@ -733,15 +745,16 @@ void* aligned_alloc(size_t alignment, size_t size)
     init();
 
     if (size == 0) return 0;
+    if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnAlignedAlloc == 0 ? 0 : g_pfnAlignedAlloc(alignment, size));
 
     void* ret = 0;
     g_innerCall = 1;
 
-    size += HDR_LEN;
+    size += alignment;
     ret = aligned_alloc(alignment, size);
-    if (ret != 0) ret = stackMalloc(ret, size);
+    if (ret != 0) ret = stackMalloc(ret, alignment, size);
     INFO("aligned_alloc success, alignment = %lu, size = %lu, ret = %p", alignment, size, ret);
 
     g_innerCall = 0;
