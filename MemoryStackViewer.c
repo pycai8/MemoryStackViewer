@@ -549,8 +549,6 @@ void* malloc(size_t size)
 {
     init();
     
-    if (size == 0) return 0;
-
     if (g_innerCall) return (g_pfnMalloc == 0 ? 0 : g_pfnMalloc(size));
 
     void* ret = 0;
@@ -588,8 +586,6 @@ void* calloc(size_t cnt, size_t size)
 {
     init();
 
-    if (cnt == 0 || size == 0) return 0;
-
     if (g_innerCall) return (g_pfnCalloc == 0 ? 0 : g_pfnCalloc(cnt, size));
 
     void* ret = 0;
@@ -609,9 +605,8 @@ void* realloc(void* ptr, size_t size)
 {
     init();
 
-    if (ptr == 0 && size == 0) return 0;
-    if (ptr == 0 && size != 0) return malloc(size);
-    if (ptr != 0 && size == 0) { free(ptr); return 0; }
+    if (ptr == 0) return malloc(size);
+    if (size == 0) { free(ptr); return 0; }
 
     if (g_innerCall) return (g_pfnRealloc == 0 ? 0 : g_pfnRealloc(ptr, size));
 
@@ -634,7 +629,6 @@ void* valloc(size_t size)
 {
     init();
 
-    if (size == 0) return 0;
     if (g_pageSize < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnValloc == 0 ? 0 : g_pfnValloc(size));
@@ -655,7 +649,6 @@ void* pvalloc(size_t size)
 {
     init();
 
-    if (size == 0) return 0;
     if (g_pageSize < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnPValloc == 0 ? 0 : g_pfnPValloc(size));
@@ -676,7 +669,6 @@ void* memalign(size_t alignment, size_t size)
 {
     init();
 
-    if (size == 0) return 0;
     if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnMemAlign == 0 ? 0 : g_pfnMemAlign(alignment, size));
@@ -697,7 +689,6 @@ void* libc_memalign(size_t alignment, size_t size)
 {
     init();
 
-    if (size == 0) return 0;
     if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnLibcMemAlign == 0 ? 0 : g_pfnLibcMemAlign(alignment, size));
@@ -719,7 +710,6 @@ int posix_memalign(void** ptr, size_t alignment, size_t size)
     init();
 
     if (ptr == 0) return EINVAL;
-    if (size == 0) { *ptr = 0; return EINVAL; }
     if (alignment < MIN_ALIGNMENT) { *ptr = 0; return EINVAL; }
 
     if (g_innerCall) return (g_pfnPosixMemAlign == 0 ? 0 : g_pfnPosixMemAlign(ptr, alignment, size));
@@ -744,7 +734,6 @@ void* aligned_alloc(size_t alignment, size_t size)
 {
     init();
 
-    if (size == 0) return 0;
     if (alignment < MIN_ALIGNMENT) return 0;
 
     if (g_innerCall) return (g_pfnAlignedAlloc == 0 ? 0 : g_pfnAlignedAlloc(alignment, size));
@@ -764,9 +753,6 @@ void* aligned_alloc(size_t alignment, size_t size)
 PFN_SignalHandler signal(int sigNum, PFN_SignalHandler sigHdr)
 {
     init();
-
-    if (!(1 <= sigNum && sigNum <= 64)) return SIG_ERR;
-    if (sigHdr == 0) return SIG_ERR; // fixme??? 0 means clear handler???
 
     if (g_innerCall) return (g_pfnSignal == 0 ? SIG_ERR : g_pfnSignal(sigNum, sigHdr));
 
