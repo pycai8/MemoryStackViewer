@@ -11,6 +11,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <sys/prctl.h>
 
 ////////////////pre-defines///////////////////////
 #define RPT_SIGNAL 64
@@ -18,6 +20,7 @@
 #define RPT_DIR "/var/log/msv"
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
+#define MSV_RPT_INTERVAL 2 // sleep 2s to checker g_rptFlag
 #define MSV_INLINE __attribute__ ((always_inline)) inline
 
 #define DBG(fmt, ...)  //{printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
@@ -73,6 +76,9 @@ static MemBt* g_list[BKT_CNT] = {0};
 static unsigned long g_count = 0;
 static unsigned long g_total = 0;
 static unsigned long g_chc = 0; // crc hint count
+static int g_rptFlag = 0;
+static int g_rptRunning = 0;
+static pthread_t g_rptThread = 0;
 
 static PFN_Malloc g_pfnMalloc = 0;
 static PFN_Free g_pfnFree = 0;
@@ -301,11 +307,9 @@ static unsigned long long getVid(void** bt, unsigned long depth)
 
 //////////////////stack functions//////////////////////
 
-static void rptSigHdr(int sigNum)
+static void reportCurrent()
 {
-    if (sigNum != RPT_SIGNAL) return;
-
-    if (g_pfnRptSigOutHdr != SIG_ERR && g_pfnRptSigOutHdr != 0) g_pfnRptSigOutHdr(sigNum);
+    initPidCmd();
 
     char time[100] = {0};
     getCurTime(time, sizeof(time));
@@ -387,6 +391,37 @@ static void rptSigHdr(int sigNum)
         , maxUsingBtCnt);
 
     fclose(fp);
+}
+
+static void* rptThreadEntry(void* arg)
+{
+    prctl(PR_SET_NAME, "msvReport");
+    g_rptRunning = 1;
+    while (g_rptRunning)
+    {
+        sleep(MSV_RPT_INTERVAL);
+        if (!g_rptFlag) continue;
+        g_rptFlag = 0;
+        reportCurrent();
+    }
+}
+
+static void rptSigHdr(int sigNum)
+{
+    if (sigNum != RPT_SIGNAL) return;
+
+    if (g_pfnRptSigOutHdr != SIG_ERR && g_pfnRptSigOutHdr != 0) g_pfnRptSigOutHdr(sigNum);
+
+    g_rptFlag = 1;
+    if (g_rptThread != 0) return;
+
+    //create thread
+    int ret = pthread_create(&g_rptThread, 0, rptThreadEntry, 0);
+    if (ret != 0)
+    {
+        g_rptThread = 0;
+        ERR("pthread_create fail: ret=%d", ret);
+    }
 }
 
 MSV_INLINE
@@ -510,7 +545,6 @@ static void init()
         PFN_SignalHandler ret = SIG_ERR;
         if (g_pfnSignal) ret = g_pfnSignal(RPT_SIGNAL, rptSigHdr);
         if (ret == SIG_ERR) ERR("report signal[%d] install fail", RPT_SIGNAL);
-        initPidCmd();
         DBG("init success");
     }
 }
