@@ -18,6 +18,7 @@
 #define RPT_DIR "/var/log/msv"
 #define BKT_CNT (0xffff+1)
 #define VID_MV_CNT 48
+#define MSV_INLINE __attribute__ ((always_inline)) inline
 
 #define DBG(fmt, ...)  //{printf("debug %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
 #define INFO(fmt, ...)  // {printf("info %s:%d %s => ", __FILE__, __LINE__, __func__);printf(fmt, ##__VA_ARGS__);printf("\n");}
@@ -388,6 +389,7 @@ static void rptSigHdr(int sigNum)
     fclose(fp);
 }
 
+MSV_INLINE
 static MemBt* stackGetCurrent(size_t size)
 {
     MemBt* ret = (MemBt*)malloc(sizeof(MemBt));
@@ -427,6 +429,7 @@ static int stackEqual(MemBt* bt1, MemBt* bt2)
     return 1;
 }
 
+MSV_INLINE
 static void* stackMalloc(void* ptr, size_t alignment, size_t size)
 {
     PtrHdr* hdr = (PtrHdr*)ptr;
