@@ -1,12 +1,18 @@
 #!/bin/bash
 
-gcc -shared -fPIC -O0 -g3 MemoryStackViewer.c -o libmsv.so -ldl
+if [ ! -d output ]; then
+    mkdir output
+fi
 
-g++ -O0 -g3 MemoryStackTranslate.cpp -o mst
+gcc -shared -fPIC -O0 -g3 MemoryStackViewer.c -o ./output/libmsv.so -ldl
 
-g++ -O0 -g3 CreateThreadTest.cpp -o ctt -lpthread
+g++ -O0 -g3 MemoryStackTranslate.cpp -o ./output/mst
 
-g++ -O0 -g3 PerformanceTest.cpp  -lpthread -o pft
+g++ -O0 -g3 CreateThreadTest.cpp -o ./output/ctt -lpthread
+
+g++ -c PerformanceTest.cpp -o output/PerformanceTest.o
+
+g++ -O0 -g3 output/*.o  -lpthread -o ./output/pft
 
 exit 0
 

@@ -11,7 +11,14 @@ using namespace std;
 
 size_t randSize()
 {
-    return 1024;
+    FILE* fp = fopen("/dev/urandom", "rb");
+    if (fp == 0) return 0;
+
+    size_t c1 = (size_t)fgetc(fp);
+    size_t c2 = (size_t)fgetc(fp);
+    size_t ret = ((c1 << 8) | c2);
+    //cout << "random: " << ret << endl;
+    return ret;
 }
 
 unsigned long getCurrent()
@@ -87,11 +94,7 @@ void innerTest()
     }
 }
 
-void singleTest()
-{
-    // temp
-    innerTest();
-}
+void singleTest();
 
 void* threadEntry(void* arg)
 {
