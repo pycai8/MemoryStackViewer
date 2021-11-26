@@ -3,7 +3,7 @@
 #output single test
 ost()
 {
-    echo $1 >> output/SingleTest.cpp
+    echo $1 >> temp/SingleTest.cpp
 }
 
 #create single test
@@ -34,18 +34,22 @@ if [ ! -d output ]; then
     mkdir output
 fi
 
+if [ ! -d temp ]; then
+    mkdir temp
+fi
+
 fileCount=$1
 btCount=$2
 btDepth=$3
 
-rm output/SingleTest* -rf
+rm temp/SingleTest* -rf
 
 for ((x=1; x<=$fileCount; x++))
 do
-    rm output/SingleTest.cpp -rf
+    rm temp/SingleTest.cpp -rf
     cst $btCount $btDepth $x
-    mv output/SingleTest.cpp output/SingleTest${x}.cpp
-    g++ -c output/SingleTest${x}.cpp -o output/SingleTest${x}.o
+    mv temp/SingleTest.cpp temp/SingleTest${x}.cpp
+    g++ -c temp/SingleTest${x}.cpp -o temp/SingleTest${x}.o
 done
 
 for ((y=1; y<=$fileCount; y++))
@@ -60,7 +64,7 @@ do
 done
 ost "}"
 
-g++ -c output/SingleTest.cpp -o output/SingleTest.o
+g++ -c temp/SingleTest.cpp -o temp/SingleTest.o
 
 exit 0
 
