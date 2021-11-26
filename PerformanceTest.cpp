@@ -40,14 +40,15 @@ void innerTest()
         free(ptr);
     }
     { 
-        void* ptr1 = malloc(randSize()); 
-        void* ptr2 = realloc(ptr1, randSize());
+        void* ptr1 = malloc(randSize());
+        size_t newSize = randSize();
+        void* ptr2 = realloc(ptr1, newSize);
         if (ptr2) 
         {
             malloc_usable_size(ptr2);
             free(ptr2);
         }
-        else 
+        else if (newSize > 0)
         {
             malloc_usable_size(ptr1);
             free(ptr1);

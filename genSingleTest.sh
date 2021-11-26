@@ -40,7 +40,7 @@ btDepth=$3
 
 rm output/SingleTest* -rf
 
-for ((x=1; x <= $fileCount; x++))
+for ((x=1; x<=$fileCount; x++))
 do
     rm output/SingleTest.cpp -rf
     cst $btCount $btDepth $x
@@ -54,7 +54,7 @@ do
 done
 
 ost "void singleTest(){"
-for ((z=1; z<=fileCount; z++))
+for ((z=1; z<=$fileCount; z++))
 do
     ost "singleTest${z}();"
 done

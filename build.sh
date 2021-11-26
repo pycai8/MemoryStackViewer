@@ -10,7 +10,7 @@ g++ -O0 -g3 MemoryStackTranslate.cpp -o ./output/mst
 
 g++ -O0 -g3 CreateThreadTest.cpp -o ./output/ctt -lpthread
 
-g++ -c PerformanceTest.cpp -o output/PerformanceTest.o
+g++ -O0 -g3 -c PerformanceTest.cpp -o output/PerformanceTest.o
 
 g++ -O0 -g3 output/*.o  -lpthread -o ./output/pft
 
